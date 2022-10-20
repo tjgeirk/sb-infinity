@@ -37,7 +37,7 @@ def getData(coin, TF):
     return DF
 
 
-def buy(coin, contracts, side):
+def buy():
     print(f'buying {coin}')
     price = exchange.fetch_order_book(coin)['bids'][0][0]
     if side == 'short':
@@ -51,7 +51,7 @@ def buy(coin, contracts, side):
     return exchange.create_limit_buy_order(COIN, amount, price, params=params)
 
 
-def sell(coin, contracts, side):
+def sell():
     print(f'selling {coin}')
     price = exchange.fetch_order_book(coin)['asks'][0][0]
     if side == 'long':
@@ -106,9 +106,9 @@ while True:
                 trail = pnl if pnl > trail else trail
                 stop = trail - abs(STOPLOSS)
             if pnl < stop and side == 'long':
-                sell(coin, contracts, side)
+                sell()
             if pnl < stop and side == 'short':
-                buy(coin, contracts, side)
+                buy()
 
             o = getData(coin, TF)['open']
             h = getData(coin, TF)['high']
@@ -120,9 +120,9 @@ while True:
             Close = (c.iloc[-1]+h.iloc[-1]+l.iloc[-1])/3
 
             if Open > upperband(h, l, c, 20) and Open > Close and rsi(c, 5) < 70:
-                sell(coin, contracts, side)
+                sell()
             if Open < lowerband(h, l, c, 20) and Open < Close and rsi(c, 5) > 30:
-                buy(coin, contracts, side)
+                buy()
     except Exception as e:
         time.sleep(10)
         print(e)
