@@ -1,17 +1,27 @@
 import datetime
+from pprint import pp
 import time
+from kucoin import client
 from ccxt import kucoinfutures as kcf
 from pandas import DataFrame as dataframe
 from ta import trend, volatility, momentum
+
 API_KEY = ''
 API_SECRET = ''
 API_PASSWD = ''
-COIN = 'BTC'
-LOTSPERTRADE = 10
-LEVERAGE = 100
-TF = '5m'
+COIN = 'ETH'
+LOTSPERTRADE = 100
+LEVERAGE = 75
+TF = '1m'
 STOPLOSS = 0.05
 exchange = kcf({
+    'adjusTForTimeDifference': True,
+    'apiKey': API_KEY,
+    'secret': API_SECRET,
+    'password': API_PASSWD
+})
+
+client = ({
     'adjusTForTimeDifference': True,
     'apiKey': API_KEY,
     'secret': API_SECRET,
@@ -39,84 +49,94 @@ def buy():
     price = exchange.fetch_order_book(coin)['bids'][0][0]
     if side == 'short':
         amount = contracts
-        trail = 0
-        stop = trail - abs(STOPLOSS)
         params = {'reduceOnly': True, 'closeOrder': True}
     if side != 'short':
         amount = LOTSPERTRADE
         params = {'leverage': LEVERAGE}
-    return exchange.create_limit_buy_order(coin, amount, price, params=params)
+    return exchange.create_stop_limit_order(coin, 'buy', amount, price, (price-(price*abs(STOPLOSS))), params=params)
 
 
 def sell():
     print(f'selling {coin}')
     price = exchange.fetch_order_book(coin)['asks'][0][0]
     if side == 'long':
-        trail = 0
-        stop = trail - abs(STOPLOSS)
         amount = contracts
         params = {'reduceOnly': True, 'closeOrder': True}
     if side != 'long':
         amount = LOTSPERTRADE
         params = {'leverage': LEVERAGE}
-    return exchange.create_limit_sell_order(coin, amount, price, params=params)
+    return exchange.create_stop_limit_order(coin, 'sell', amount, price, (price-(price*abs(STOPLOSS))), params=params)
 
 
-def ema(pointOfReference, window):
-    return trend.ema_indicator(pointOfReference, window).iloc[-1]
+def ema(ohlc, window, period):
+    return trend.ema_indicator(ohlc, window).iloc[-period]
 
 
-def rsi(pointOfReference, window):
-    return momentum.rsi(pointOfReference, window).iloc[-1]
+def macd(ohlc, fast, slow, signal, period):
+    return {'macd': trend.macd(ohlc, slow, fast).iloc[-period], 'signal': trend.macd_signal(ohlc, slow, fast, signal).iloc[-period], 'spread': trend.macd_diff(ohlc, slow, fast, signal).iloc[-period]}
 
 
-def upperband(h, l, c, window):
-    return volatility.keltner_channel_hband(h, l, c, window).iloc[-1]
+def rsi(ohlc, window, period):
+    return momentum.rsi(ohlc, window).iloc[-period]
 
 
-def lowerband(h, l, c, window):
-    return volatility.keltner_channel_lband(h, l, c, window).iloc[-1]
+def bands(ohlc, window, devs, period):
+    return {'upper': volatility.bollinger_hband(ohlc, window, devs).iloc[-period], 'lower': volatility.bollinger_lband(ohlc, window, devs).iloc[-period], 'middle': volatility.bollinger_mavg(ohlc, window, devs).iloc[-period]}
 
 
-cycle = trail = 0
-stop = trail - abs(STOPLOSS)
+def dc(h, l, c, window, period):
+    return {'upper': volatility.donchian_channel_hband(h, l, c, window).iloc[-period], 'lower': volatility.donchian_channel_lband(h, l, c, window).iloc[-period], 'middle': volatility.donchian_channel_mband(h, l, c, window).iloc[-period]}
+
+
 print('trader started')
 while True:
     positions = exchange.fetch_positions()
-    cycle += 1
-    if cycle % 50 == 0:
-        print('clearing queue')
-        exchange.cancel_all_orders()
     coin = str(f'{COIN}/USDT:USDT')
     pnl = 0
     contracts = 0
-    side = 'none'
-    trail = 0
+    side = None
     for i, v in enumerate(positions):
         if v['symbol'] == str(f'{COIN}/USDT:USDT'):
             coin = v['symbol']
             pnl = v['percentage']
             contracts = v['contracts']
             side = v['side']
-    trail = pnl if pnl > trail else trail
-    stop = trail - abs(STOPLOSS)
-    if pnl < stop and side == 'long':
-        sell()
-    if pnl < stop and side == 'short':
-        buy()
     o = getData(coin, TF)['open']
     h = getData(coin, TF)['high']
     l = getData(coin, TF)['low']
     c = getData(coin, TF)['close']
-    High = h.iloc[-1]
-    Low = l.iloc[-1]
     Open = (c.iloc[-2]+o.iloc[-2])/2
+    lastOpen = (c.iloc[-3]+o.iloc[-3])/2
     Close = (c.iloc[-1]+h.iloc[-1]+l.iloc[-1])/3
+    lastClose = (c.iloc[-2]+h.iloc[-2]+l.iloc[-2])/3
     try:
-        if Open > upperband(h, l, c, 20) and Open > Close and rsi(c, 5) < 70:
-            sell()
-        if Open < lowerband(h, l, c, 20) and Open < Close and rsi(c, 5) > 30:
+        # if ((l.iloc[-1] < bands(c, 20, 2, 1)['lower']) or (l.iloc[-2] < bands(c, 20, 2, 2)['lower'])) and ((Open < Close) or (Close > lastClose and Open < lastOpen)):buy()
+
+        # if ((h.iloc[-1] > bands(c, 20, 2, 1)['upper']) or (h.iloc[-2] > bands(c, 20, 2, 2)['upper'])) and ((Open > Close) or (Close < lastClose and Open > lastOpen)):sell()
+
+        # if side == 'long' and Open > bands(c, 20, 2, 1)['middle'] > Close:sell()
+
+        # if side == 'short' and Open < bands(c, 20, 2, 1)['middle'] < Close:buy()
+
+        #if dc(h, l, c, 20, 2)['lower'] == l.iloc[-2] and c.iloc[-2] > l.iloc[-2] and rsi(c, 5, 2) < 10 and rsi(c, 5, 1) > rsi(c, 5, 2) and Open < Close:buy()
+
+        #if dc(h, l, c, 20, 2)['upper'] == h.iloc[-2] and c.iloc[-2] < h.iloc[-2] and rsi(c, 5, 2) > 90 and rsi(c, 5, 1) < rsi(c, 5, 2) and Open > Close:sell()
+
+        if rsi(c, 8, 1) > rsi(c, 8, 2) < 30 and ema(o, 3, 1) < ema(c, 3, 1) and (Close > lastClose or Close > Open):
             buy()
+
+        if rsi(c, 8, 1) < rsi(c, 8, 2) > 70 and ema(o, 3, 1) > ema(c, 3, 1) and (Close < lastClose or Close < Open):
+            sell()
+
+        if 30 < rsi(c, 8, 1) < 70:
+
+            if ema(o, 3, 1) < ema(c, 3, 1) and Open < Close:
+                buy()
+
+            elif ema(o, 3, 1) > ema(c, 3, 1) and Open > Close:
+                sell()
+
+        time.sleep(5)
+
     except Exception as e:
         print(e)
-        time.sleep(10)
