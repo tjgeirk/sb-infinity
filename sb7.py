@@ -1,27 +1,23 @@
 import datetime
-from pprint import pp
 import time
-from kucoin import client
+import logging
+
 from ccxt import kucoinfutures as kcf
 from pandas import DataFrame as dataframe
 from ta import trend, volatility, momentum
 
+logging.basicConfig(filename='shlongbot7.log',
+                    encoding='utf-8', level=logging.DEBUG)
+
 API_KEY = ''
 API_SECRET = ''
 API_PASSWD = ''
-COIN = 'ETH'
+COIN = 'APE'
 LOTSPERTRADE = 100
-LEVERAGE = 75
-TF = '1m'
-STOPLOSS = 0.05
-exchange = kcf({
-    'adjusTForTimeDifference': True,
-    'apiKey': API_KEY,
-    'secret': API_SECRET,
-    'password': API_PASSWD
-})
+LEVERAGE = 10
+TF = '15m'
 
-client = ({
+exchange = kcf({
     'adjusTForTimeDifference': True,
     'apiKey': API_KEY,
     'secret': API_SECRET,
@@ -46,6 +42,7 @@ def getData(coin, TF):
 
 def buy():
     print(f'buying {coin}')
+
     price = exchange.fetch_order_book(coin)['bids'][0][0]
     if side == 'short':
         amount = contracts
@@ -53,11 +50,12 @@ def buy():
     if side != 'short':
         amount = LOTSPERTRADE
         params = {'leverage': LEVERAGE}
-    return exchange.create_stop_limit_order(coin, 'buy', amount, price, (price-(price*abs(STOPLOSS))), params=params)
+    return exchange.create_limit_order(coin, 'buy', amount, price, params=params)
 
 
 def sell():
     print(f'selling {coin}')
+
     price = exchange.fetch_order_book(coin)['asks'][0][0]
     if side == 'long':
         amount = contracts
@@ -65,15 +63,12 @@ def sell():
     if side != 'long':
         amount = LOTSPERTRADE
         params = {'leverage': LEVERAGE}
-    return exchange.create_stop_limit_order(coin, 'sell', amount, price, (price-(price*abs(STOPLOSS))), params=params)
+
+    return exchange.create_limit_order(coin, 'sell', amount, price, params=params)
 
 
 def ema(ohlc, window, period):
     return trend.ema_indicator(ohlc, window).iloc[-period]
-
-
-def macd(ohlc, fast, slow, signal, period):
-    return {'macd': trend.macd(ohlc, slow, fast).iloc[-period], 'signal': trend.macd_signal(ohlc, slow, fast, signal).iloc[-period], 'spread': trend.macd_diff(ohlc, slow, fast, signal).iloc[-period]}
 
 
 def rsi(ohlc, window, period):
@@ -84,11 +79,8 @@ def bands(ohlc, window, devs, period):
     return {'upper': volatility.bollinger_hband(ohlc, window, devs).iloc[-period], 'lower': volatility.bollinger_lband(ohlc, window, devs).iloc[-period], 'middle': volatility.bollinger_mavg(ohlc, window, devs).iloc[-period]}
 
 
-def dc(h, l, c, window, period):
-    return {'upper': volatility.donchian_channel_hband(h, l, c, window).iloc[-period], 'lower': volatility.donchian_channel_lband(h, l, c, window).iloc[-period], 'middle': volatility.donchian_channel_mband(h, l, c, window).iloc[-period]}
+logging.info('trader started')
 
-
-print('trader started')
 while True:
     positions = exchange.fetch_positions()
     coin = str(f'{COIN}/USDT:USDT')
@@ -105,38 +97,38 @@ while True:
     h = getData(coin, TF)['high']
     l = getData(coin, TF)['low']
     c = getData(coin, TF)['close']
+
     Open = (c.iloc[-2]+o.iloc[-2])/2
     lastOpen = (c.iloc[-3]+o.iloc[-3])/2
     Close = (c.iloc[-1]+h.iloc[-1]+l.iloc[-1])/3
     lastClose = (c.iloc[-2]+h.iloc[-2]+l.iloc[-2])/3
+
     try:
-        # if ((l.iloc[-1] < bands(c, 20, 2, 1)['lower']) or (l.iloc[-2] < bands(c, 20, 2, 2)['lower'])) and ((Open < Close) or (Close > lastClose and Open < lastOpen)):buy()
-
-        # if ((h.iloc[-1] > bands(c, 20, 2, 1)['upper']) or (h.iloc[-2] > bands(c, 20, 2, 2)['upper'])) and ((Open > Close) or (Close < lastClose and Open > lastOpen)):sell()
-
-        # if side == 'long' and Open > bands(c, 20, 2, 1)['middle'] > Close:sell()
-
-        # if side == 'short' and Open < bands(c, 20, 2, 1)['middle'] < Close:buy()
-
-        #if dc(h, l, c, 20, 2)['lower'] == l.iloc[-2] and c.iloc[-2] > l.iloc[-2] and rsi(c, 5, 2) < 10 and rsi(c, 5, 1) > rsi(c, 5, 2) and Open < Close:buy()
-
-        #if dc(h, l, c, 20, 2)['upper'] == h.iloc[-2] and c.iloc[-2] < h.iloc[-2] and rsi(c, 5, 2) > 90 and rsi(c, 5, 1) < rsi(c, 5, 2) and Open > Close:sell()
-
-        if rsi(c, 8, 1) > rsi(c, 8, 2) < 30 and ema(o, 3, 1) < ema(c, 3, 1) and (Close > lastClose or Close > Open):
-            buy()
-
-        if rsi(c, 8, 1) < rsi(c, 8, 2) > 70 and ema(o, 3, 1) > ema(c, 3, 1) and (Close < lastClose or Close < Open):
+        if (Open > lastOpen and Close < lastClose) or (lastOpen < lastClose and Open > Close) and lastClose > bands(c, 20, 1, 2)['upper'] or Close > bands(c, 20, 1, 1)['upper']:
+            logging.info(getData(coin, TF)['date'].iloc[-1])
+            logging.debug(
+                "if (Open > lastOpen and Close < lastClose) or (lastOpen < lastClose and Open > Close) and lastClose > bands(c, 20, 1, 2)['upper''] or Close > bands(c, 20, 1, 1)['upper']:")
             sell()
 
-        if 30 < rsi(c, 8, 1) < 70:
+        if (Open < lastOpen and Close > lastClose) or (lastOpen > lastClose and Open < Close) and lastClose < bands(c, 20, 1, 2)['lower'] or Close < bands(c, 20, 1, 1)['lower']:
+            logging.info(getData(coin, TF)['date'].iloc[-1])
+            logging.debug(
+                "if (Open < lastOpen and Close > lastClose) or (lastOpen > lastClose and Open < Close) and lastClose < bands(c, 20, 1, 2)['lower'] or Close < bands(c, 20, 1, 1)['lower']:")
+            buy()
 
-            if ema(o, 3, 1) < ema(c, 3, 1) and Open < Close:
-                buy()
+        if side == 'long' and Close < ema(c, 21, 1) < Open:
+            logging.info(getData(coin, TF)['date'].iloc[-1])
+            logging.debug("if side == 'long' and Close < ema(c, 21, 1)< Open")
+            sell()
 
-            elif ema(o, 3, 1) > ema(c, 3, 1) and Open > Close:
-                sell()
+        if side == 'short' and Close > ema(c, 21, 1) > Open:
+            logging.info(getData(coin, TF)['date'].iloc[-1])
+            logging.debug(
+                "if side == 'short' and Close > ema(c, 21, 1) > Open")
+            buy()
 
-        time.sleep(5)
+        time.sleep(30)
 
+        exchange.cancel_all_orders()
     except Exception as e:
-        print(e)
+        logging.error(e)
