@@ -13,7 +13,7 @@ exchange = kcf({
     'apiKey': '', 
     'secret': '', 
     'password': '', 
-    'adjusTIMEFRAMEorTimeDifference': True, 
+    'adjustForTimeDifference': True, 
 })
 
 COINS = ['APT/USDT:USDT', 'APE/USDT:USDT', 'LUNC/USDT:USDT', 'LUNA/USDT:USDT', 'KLAY/USDT:USDT', 'ETC/USDT:USDT']
