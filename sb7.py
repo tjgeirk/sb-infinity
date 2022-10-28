@@ -127,10 +127,10 @@ while True:
                 if (Close or lastClose) < lowerBand and l.iloc[-2] < l.iloc[-1]:
                     order.buy()
 
-                if Open > upperBand > Close:
+                if Open > upperBand and Open > Close:
                     order.sell()
                         
-                if Open < lowerBand < Close:
+                if Open < lowerBand and Open < Close:
                     order.buy()
 
             except Exception as e:
