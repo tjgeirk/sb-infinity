@@ -1,4 +1,3 @@
-
 import datetime
 import logging
 
@@ -10,22 +9,20 @@ from pandas import DataFrame as dataframe
 from ta import trend, volatility, momentum
 
 exchange = kcf({
-    'apiKey': '', 
-    'secret': '', 
-    'password': '', 
+    'apiKey': '',
+    'secret': '',
+    'password': '',
     'adjustForTimeDifference': True, 
 })
 
-COINS = ['APT/USDT:USDT', 'APE/USDT:USDT', 'LUNC/USDT:USDT', 'LUNA/USDT:USDT', 'KLAY/USDT:USDT', 'ETC/USDT:USDT']
+COINS = ["KLAY/USDT:USDT", "OP/USDT:USDT", "SHIB/USDT:USDT", "DOGE/USDT:USDT"]
 
 LOTS_PER_TRADE = 10
-STOP_LOSS = -0.1
-TAKE_PROFIT = 1
-LEVERAGE = 20
-TIMEFRAME = '5m'
+LEVERAGE = 5
+TIMEFRAMES = ['1m','5m','15m','1h']
 
-def getData(coin, TIMEFRAME):
-    data = exchange.fetch_ohlcv(coin, TIMEFRAME, limit=500)
+def getData(coin, tf):
+    data = exchange.fetch_ohlcv(coin, tf, limit=500)
     df = {}
     for i, col in enumerate(['date', 'open', 'high', 'low', 'close', 
                              'volume']):
@@ -77,80 +74,65 @@ class order:
 def ema(ohlc, window, period):
     return trend.ema_indicator(ohlc, window).iloc[-period]
 
-def rsi(window, period):
-    return momentum.rsi(c, window).iloc[-period]
-
-def stoch(window, smooth, period):
-    return {'stoch':momentum.stoch(h, l, c, window, smooth).iloc[-period], 'signal':momentum.stoch_signal(h, l, c, window, smooth).iloc[-period]}
-
 def bands(window, devs, period):
     return {'upper': volatility.bollinger_hband(c, window, devs).iloc[-period], 'lower': volatility.bollinger_lband(c, window, devs).iloc[-period], 'middle': volatility.bollinger_mavg(c, window, devs).iloc[-period]}
 
 while True:
-    print(getPositions())
-    for coin in COINS:
-        if coin in getPositions():
-            contracts = getPositions()[coin]['contracts']
-            side = getPositions()[coin]['side']
-            pnl = getPositions()[coin]['percentage']
-        else:
-            contracts = None
-            side = None
-            pnl = None
+    for tf in TIMEFRAMES:
+        print(getPositions())
+        for coin in COINS:
+            if coin in getPositions():
+                contracts = getPositions()[coin]['contracts']
+                side = getPositions()[coin]['side']
+                pnl = getPositions()[coin]['percentage']
+            else:
+                contracts = None
+                side = None
+                pnl = None
 
-        o = getData(coin, TIMEFRAME)['open']
-        h = getData(coin, TIMEFRAME)['high']
-        l = getData(coin, TIMEFRAME)['low']
-        c = getData(coin, TIMEFRAME)['close']
-        
-        Open = (c.iloc[-2]+o.iloc[-2])/2
-        lastOpen = (c.iloc[-3]+o.iloc[-3])/2
-        Close = (c.iloc[-1]+h.iloc[-1]+l.iloc[-1])/3
-        lastClose = (c.iloc[-2]+h.iloc[-2]+l.iloc[-2])/3
-
-        ask = exchange.fetch_order_book(coin)['asks'][0][0]
-        bid = exchange.fetch_order_book(coin)['bids'][0][0]
-
-        exit = {'reduceOnly': True, 'closeOrder': True}
-        enter = {'leverage': LEVERAGE}
-        
-        hema =  ema(h, 8, 1)
-        lema = ema(l, 8, 1)
-        clema = ema(c, 8, 1)
-        opema = ema(o, 8, 1)
-    
-        longOk = stoch(200, 20, 1)['stoch'] > stoch(200, 20, 1)['signal']
-        shortOk = stoch(200, 20, 1)['stoch'] < stoch(200, 20, 1)['signal']
-
-        buyStoch = stoch(8, 3, 1)['stoch'] > stoch(8, 3, 1)['signal'] > 90
-        sellStoch = stoch(8, 3, 1)['stoch'] < stoch(8, 3, 1)['signal']
-
-        upperBand = bands(20, 2, 1)['upper']
-        lowerBand =  bands(20, 2, 1)['lower']
-        
-        try:
-            if pnl < STOP_LOSS or pnl > TAKE_PROFIT:
-                exchange.create_limit_order(coin, 'buy', contracts, bid, params=exit)
+            o = getData(coin, tf)['open']
+            h = getData(coin, tf)['high']
+            l = getData(coin, tf)['low']
+            c = getData(coin, tf)['close']
             
-            if Close < lema and opema > clema:
-                order.sell()
+            Open = (c.iloc[-2]+o.iloc[-2])/2
+            lastOpen = (c.iloc[-3]+o.iloc[-3])/2
+            Close = (c.iloc[-1]+h.iloc[-1]+l.iloc[-1])/3
+            lastClose = (c.iloc[-2]+h.iloc[-2]+l.iloc[-2])/3
 
-            if Close > lema and opema < clema:
-                order.buy()
-        
-            if (Close or lastClose) > upperBand and h.iloc[-2] > h.iloc[-1]:
-                order.sell()
-                    
-            if (Close or lastClose) < lowerBand and l.iloc[-2] < l.iloc[-1]:
-                order.buy()
+            ask = exchange.fetch_order_book(coin)['asks'][0][0]
+            bid = exchange.fetch_order_book(coin)['bids'][0][0]
 
-            if Open > upperBand > Close:
-                order.sell()
-                       
-            if Open < lowerBand < Close:
-                order.buy()
+            exit = {'reduceOnly': True, 'closeOrder': True}
+            enter = {'leverage': LEVERAGE}
+            
+            hema =  ema(h, 8, 1)
+            lema = ema(l, 8, 1)
+            clema = ema(c, 8, 1)
+            opema = ema(o, 8, 1)
 
-        except Exception as e:
-            print(e)
-            logging.exception(e)
+            upperBand = bands(20, 2, 1)['upper']
+            lowerBand =  bands(20, 2, 1)['lower']
+            
+            try:
+                if Close < lema and opema > clema:
+                    order.sell()
 
+                if Close > lema and opema < clema:
+                    order.buy()
+            
+                if (Close or lastClose) > upperBand and h.iloc[-2] > h.iloc[-1]:
+                    order.sell()
+                        
+                if (Close or lastClose) < lowerBand and l.iloc[-2] < l.iloc[-1]:
+                    order.buy()
+
+                if Open > upperBand > Close:
+                    order.sell()
+                        
+                if Open < lowerBand < Close:
+                    order.buy()
+
+            except Exception as e:
+                print(e)
+                logging.exception(e)
